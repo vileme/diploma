@@ -1,0 +1,13 @@
+argparse
+h5py
+pandas
+numpy 
+torch
+torchvision
+pathlib
+opencv-python
+tensorflow-gpu
+gdown
+joblib
+h5py
+torchnet
