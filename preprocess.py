@@ -50,8 +50,8 @@ def main():
     parser = argparse.ArgumentParser()
     arg = parser.add_argument
     arg('--train-test-split-file', type=str, default='./data/train_test_id.pickle', help='train test split file')
-    arg('--image-path', type=str, default='./data/resized/', help='training image path')
-    arg('--mask-path', type=str, default='./data/masks_resized/', help='ground truth mask path')
+    arg('--image-path', type=str, default='./data/ISIC2018_Task1-2_Training_Input/', help='training image path')
+    arg('--mask-path', type=str, default='./data/ISIC2018_Task2_Training_GroundTruth_v3/', help='ground truth mask path')
     arg('--save-path', type=str, default='./data/task2_h5/', help='output path')
     
     args = parser.parse_args()
