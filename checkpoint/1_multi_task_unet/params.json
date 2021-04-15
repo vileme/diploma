@@ -1,0 +1,15 @@
+{
+ "attribute": "all",
+ "batch_size": 8,
+ "checkpoint": "checkpoint/1_multi_task_unet",
+ "image_path": "data/task2_h5/",
+ "jaccard_weight": 1,
+ "lr": 0.001,
+ "model_weight": null,
+ "n_epochs": 100,
+ "num_classes": 5,
+ "optimizer": "Adam",
+ "resume_path": null,
+ "train_test_split_file": "./data/train_test_id.pickle",
+ "workers": 4
+}

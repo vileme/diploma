@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import time
 import pickle
-
+import wandb
 import torch
 from torch import nn
 from torch.optim import Adam, SGD
@@ -57,6 +57,8 @@ def main():
                                                          'streaks', 'milia_like_cyst',
                                                          'globules', 'all'])
     args = parser.parse_args()
+    
+    wandb.init(project="pipeline", config= args)
 
     checkpoint = Path(args.checkpoint)
     checkpoint.mkdir(exist_ok=True, parents=True)
@@ -74,8 +76,8 @@ def main():
     checkpoint.joinpath('params.json').write_text(
         json.dumps(vars(args), indent=True, sort_keys=True))
 
-    model = UNet16(num_classes=num_classes)
-
+    model = UNet16(num_classes=num_classes, pretrained='vgg')
+    wandb.watch(model)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     #    model = nn.DataParallel(model)
     model = nn.DataParallel(model)
@@ -194,6 +196,7 @@ def main():
                 train_prob = torch.sigmoid(outputs)
                 train_mask_ind_prob1 = torch.sigmoid(outputs_mask_ind1)
                 train_mask_ind_prob2 = torch.sigmoid(outputs_mask_ind2)
+
                 loss1 = criterion(outputs, train_mask)
                 loss2 = F.binary_cross_entropy_with_logits(outputs_mask_ind1, train_mask_ind)
                 loss3 = F.binary_cross_entropy_with_logits(outputs_mask_ind2, train_mask_ind)
@@ -207,6 +210,7 @@ def main():
                 step += 1
                 meter.add(train_prob, train_mask, train_mask_ind_prob1, train_mask_ind_prob2, train_mask_ind,
                           loss1.item(), loss2.item(), loss3.item(), loss.item())
+                wandb.log({"loss1": loss1, "loss2": loss2, "loss3": loss3, "loss" : loss})
             epoch_time = time.time() - start_time
             train_metrics = meter.value()
             train_metrics['epoch_time'] = epoch_time

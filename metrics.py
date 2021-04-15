@@ -46,7 +46,7 @@ class AllInOneMeter(object):
         self.loss = []
         self.jaccard = []
         self.intersection = torch.zeros([5], dtype=torch.float, device='cuda:0')
-        self.union = torch.zeros([5], dtype=torch.float, device='cuda:0')
+        self.union = torch.zeros([5], dtype=torch.float, device = 'cuda:0')
 
 
     def add(self, mask_prob, true_mask, mask_ind_prob1, mask_ind_prob2, true_mask_ind, loss1,loss2,loss3,loss):

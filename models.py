@@ -56,17 +56,18 @@ class UNet16(nn.Module):
         :param num_filters:
         :param pretrained:
             False - no pre-trained network used
-            resnet - encoder pre-trained with resnet50
+            resnet - encoder pre-trained with vgg16
         """
         super().__init__()
         self.num_classes = num_classes
         self.num_filters = num_filters
         self.pool = nn.MaxPool2d(2, 2)
 
-        if pretrained == 'resnet':
-            self.encoder = torchvision.models.resnet50(pretrained=True).features
+        if pretrained == 'vgg':
+            self.encoder = torchvision.models.vgg16(pretrained=True).features
         else:
-            self.encoder = torchvision.models.resnet50(pretrained=False).features
+            self.encoder = torchvision.models.vgg16(pretrained=False).features
+        print(self.encoder)
 
         self.relu = nn.ReLU(inplace=True)
 
