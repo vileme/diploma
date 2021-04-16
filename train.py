@@ -81,7 +81,7 @@ def main():
     wandb.watch(model)
     device = torch.device(f'cuda:{args.cuda_driver}' if torch.cuda.is_available() else 'cpu')
     #    model = nn.DataParallel(model)
-    model = nn.DataParallel(model)
+    model = nn.DataParallel(model, device_ids=[2, 0, 1])
     model.to(device)
 
     if args.model_weight is not None:
