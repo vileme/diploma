@@ -1,4 +1,3 @@
-'.idea'
-.idea/
-__pycache__/
-wandb/
+.idea
+__pycache__
+wandb
