@@ -11,11 +11,11 @@ import torchvision.transforms as transforms
 
 def validation_binary(model: nn.Module, criterion, valid_loader, device, num_classes=None):
     with torch.no_grad():
-        #model.eval()
-        #losses1 = []
-        #losses2 = []
-        #jaccard = []
-        #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # model.eval()
+        # losses1 = []
+        # losses2 = []
+        # jaccard = []
+        # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
         meter = AllInOneMeter()
@@ -25,19 +25,21 @@ def validation_binary(model: nn.Module, criterion, valid_loader, device, num_cla
         w3 = 0.5
         for valid_image, valid_mask, valid_mask_ind in valid_loader:
             valid_image = valid_image.to(device)  # [N, 1, H, W]
-            valid_mask  = valid_mask.to(device).type(torch.cuda.FloatTensor)
+            valid_mask = valid_mask.to(device).type(
+                torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
             valid_image = valid_image.permute(0, 3, 1, 2)
-            valid_mask  = valid_mask.permute(0, 3, 1, 2)
-            valid_mask_ind = valid_mask_ind.to(device).type(torch.cuda.FloatTensor)
+            valid_mask = valid_mask.permute(0, 3, 1, 2)
+            valid_mask_ind = valid_mask_ind.to(device).type(
+                torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
 
             outputs, outputs_mask_ind1, outputs_mask_ind2 = model(valid_image)
             valid_prob = F.sigmoid(outputs)
             valid_mask_ind_prob1 = F.sigmoid(outputs_mask_ind1)
             valid_mask_ind_prob2 = F.sigmoid(outputs_mask_ind1)
-            #loss = criterion(outputs, valid_mask)
+            # loss = criterion(outputs, valid_mask)
             loss1 = criterion(outputs, valid_mask)
-            #loss1 = F.binary_cross_entropy_with_logits(outputs, valid_mask)
-            #loss2 = nn.BCEWithLogitsLoss()(outputs_mask_ind1, valid_mask_ind)
+            # loss1 = F.binary_cross_entropy_with_logits(outputs, valid_mask)
+            # loss2 = nn.BCEWithLogitsLoss()(outputs_mask_ind1, valid_mask_ind)
             # weight = torch.ones_like(valid_mask_ind)
             # weight[:, 0] = weight[:, 0] * 1
             # weight[:, 1] = weight[:, 1] * 14
@@ -50,9 +52,9 @@ def validation_binary(model: nn.Module, criterion, valid_loader, device, num_cla
             loss3 = F.binary_cross_entropy_with_logits(outputs_mask_ind2, valid_mask_ind)
             loss = loss1 * w1 + loss2 * w2 + loss3 * w3
 
-            #losses1.append(loss1.item())
-            #losses2.append(loss2.item())
-            #jaccard += [get_jaccard(valid_mask, (valid_prob > 0).float()).item()]
+            # losses1.append(loss1.item())
+            # losses2.append(loss2.item())
+            # jaccard += [get_jaccard(valid_mask, (valid_prob > 0).float()).item()]
             meter.add(valid_prob, valid_mask, valid_mask_ind_prob1, valid_mask_ind_prob2, valid_mask_ind,
                       loss1.item(), loss2.item(), loss3.item(), loss.item())
 
@@ -62,8 +64,8 @@ def validation_binary(model: nn.Module, criterion, valid_loader, device, num_cla
 
         ### be careful: image, mask, prob are variables
         ### if you return them directly, the memory will blow up
-        #metrics = {'valid_loss1': valid_loss1, 'valid_loss2': valid_loss2, 'valid_jaccard': valid_jaccard,
-         #          'valid_image':valid_image.data, 'valid_mask':valid_mask.data, 'valid_prob':valid_prob.data}
+        # metrics = {'valid_loss1': valid_loss1, 'valid_loss2': valid_loss2, 'valid_jaccard': valid_jaccard,
+        #          'valid_image':valid_image.data, 'valid_mask':valid_mask.data, 'valid_prob':valid_prob.data}
         valid_metrics['image'] = valid_image.data
         valid_metrics['mask'] = valid_mask.data
         valid_metrics['prob'] = valid_prob.data
@@ -76,7 +78,6 @@ def get_jaccard(y_true, y_pred):
     union = y_true.sum(dim=-2).sum(dim=-1) + y_pred.sum(dim=-2).sum(dim=-1)
 
     return (intersection / (union - intersection + epsilon)).mean()
-
 
 
 def calculate_confusion_matrix_from_arrays(prediction, ground_truth, nr_labels):

@@ -57,8 +57,8 @@ def main():
                                                          'streaks', 'milia_like_cyst',
                                                          'globules', 'all'])
     args = parser.parse_args()
-    
-    wandb.init(project="pipeline", config= args)
+
+    wandb.init(project="baseline", config=args)
 
     checkpoint = Path(args.checkpoint)
     checkpoint.mkdir(exist_ok=True, parents=True)
@@ -189,8 +189,10 @@ def main():
                 train_image = train_image.permute(0, 3, 1, 2)
                 train_mask = train_mask.permute(0, 3, 1, 2)
                 train_image = train_image.to(device)
-                train_mask = train_mask.to(device).type(torch.cuda.FloatTensor)
-                train_mask_ind = train_mask_ind.to(device).type(torch.cuda.FloatTensor)
+                train_mask = train_mask.to(device).type(
+                    torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
+                train_mask_ind = train_mask_ind.to(device).type(
+                    torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
 
                 outputs, outputs_mask_ind1, outputs_mask_ind2 = model(train_image)
                 train_prob = torch.sigmoid(outputs)
@@ -210,7 +212,6 @@ def main():
                 step += 1
                 meter.add(train_prob, train_mask, train_mask_ind_prob1, train_mask_ind_prob2, train_mask_ind,
                           loss1.item(), loss2.item(), loss3.item(), loss.item())
-                wandb.log({"loss1": loss1, "loss2": loss2, "loss3": loss3, "loss" : loss})
             epoch_time = time.time() - start_time
             train_metrics = meter.value()
             train_metrics['epoch_time'] = epoch_time
@@ -232,6 +233,10 @@ def main():
                 save_weights(model, model_path, epoch + 1, step, train_metrics, valid_metrics)
                 previous_valid_jaccard = valid_jaccard
                 print('Save best model by jaccard')
+            wandb.log({"loss": valid_metrics["loss"], "loss1": valid_metrics["loss1"],
+                       "jaccard_mean": valid_metrics["jaccard"], "jaccard1": valid_metrics["jaccard1"],
+                       "jaccard2": valid_metrics["jaccard2"], "jaccard3": valid_metrics["jaccard3"],
+                       "jaccard4": valid_metrics["jaccard4"], "jaccard5": valid_metrics["jaccard5"]})
             scheduler.step(valid_metrics['loss1'])
 
         except KeyboardInterrupt:

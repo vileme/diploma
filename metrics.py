@@ -25,8 +25,8 @@ class AllInOneMeter(object):
         self.loss = []
         self.jaccard = []
         self.epsilon = 1e-15
-        self.intersection = torch.zeros([5], dtype=torch.float, device='cuda:0')
-        self.union = torch.zeros([5], dtype=torch.float, device='cuda:0')
+        self.intersection = torch.zeros([5], dtype=torch.float, device='cuda:0' if torch.cuda.is_available() else None)
+        self.union = torch.zeros([5], dtype=torch.float, device='cuda:0' if torch.cuda.is_available() else None)
         self.reset()
 
     def reset(self):
@@ -45,11 +45,10 @@ class AllInOneMeter(object):
         self.loss3 = []
         self.loss = []
         self.jaccard = []
-        self.intersection = torch.zeros([5], dtype=torch.float, device='cuda:0')
-        self.union = torch.zeros([5], dtype=torch.float, device = 'cuda:0')
+        self.intersection = torch.zeros([5], dtype=torch.float, device='cuda:0' if torch.cuda.is_available() else None)
+        self.union = torch.zeros([5], dtype=torch.float, device='cuda:0' if torch.cuda.is_available() else None)
 
-
-    def add(self, mask_prob, true_mask, mask_ind_prob1, mask_ind_prob2, true_mask_ind, loss1,loss2,loss3,loss):
+    def add(self, mask_prob, true_mask, mask_ind_prob1, mask_ind_prob2, true_mask_ind, loss1, loss2, loss3, loss):
         self.out1auc1.add(mask_ind_prob1[:, 0].data, true_mask_ind[:, 0].data)
         self.out1auc2.add(mask_ind_prob1[:, 1].data, true_mask_ind[:, 1].data)
         self.out1auc3.add(mask_ind_prob1[:, 2].data, true_mask_ind[:, 2].data)
@@ -64,25 +63,25 @@ class AllInOneMeter(object):
         self.loss2.append(loss2)
         self.loss3.append(loss3)
         self.loss.append(loss)
-        y_pred = (mask_prob>0.3).type(true_mask.dtype)
+        y_pred = (mask_prob > 0.3).type(true_mask.dtype)
         y_true = true_mask
         self.intersection += (y_pred * y_true).sum(dim=-2).sum(dim=-1).sum(dim=0)
         self.union += y_true.sum(dim=-2).sum(dim=-1).sum(dim=0) + y_pred.sum(dim=-2).sum(dim=-1).sum(dim=0)
 
-
     def value(self):
         jaccard_array = (self.intersection / (self.union - self.intersection + self.epsilon))
         jaccard = jaccard_array.mean()
-        metrics = {'out1auc1':self.out1auc1.value()[0], 'out1auc2':self.out1auc2.value()[0],
-                   'out1auc3':self.out1auc3.value()[0], 'out1auc4':self.out1auc4.value()[0],
-                   'out1auc5':self.out1auc5.value()[0],
+        metrics = {'out1auc1': self.out1auc1.value()[0], 'out1auc2': self.out1auc2.value()[0],
+                   'out1auc3': self.out1auc3.value()[0], 'out1auc4': self.out1auc4.value()[0],
+                   'out1auc5': self.out1auc5.value()[0],
                    'out2auc1': self.out2auc1.value()[0], 'out2auc2': self.out2auc2.value()[0],
                    'out2auc3': self.out2auc3.value()[0], 'out2auc4': self.out2auc4.value()[0],
                    'out2auc5': self.out2auc5.value()[0],
-                   'loss1':np.mean(self.loss1), 'loss2':np.mean(self.loss2),
-                   'loss3':np.mean(self.loss3), 'loss':np.mean(self.loss),
-                   'jaccard':jaccard.item(), 'jaccard1':jaccard_array[0].item(),'jaccard2':jaccard_array[1].item(),
-                   'jaccard3':jaccard_array[2].item(), 'jaccard4':jaccard_array[3].item(),'jaccard5':jaccard_array[4].item(),
+                   'loss1': np.mean(self.loss1), 'loss2': np.mean(self.loss2),
+                   'loss3': np.mean(self.loss3), 'loss': np.mean(self.loss),
+                   'jaccard': jaccard.item(), 'jaccard1': jaccard_array[0].item(), 'jaccard2': jaccard_array[1].item(),
+                   'jaccard3': jaccard_array[2].item(), 'jaccard4': jaccard_array[3].item(),
+                   'jaccard5': jaccard_array[4].item(),
                    }
         for mkey in metrics:
             metrics[mkey] = round(metrics[mkey], 4)
