@@ -11,11 +11,7 @@ import torchvision.transforms as transforms
 
 def validation_binary(model: nn.Module, criterion, valid_loader, device, num_classes=None):
     with torch.no_grad():
-        # model.eval()
-        # losses1 = []
-        # losses2 = []
-        # jaccard = []
-        # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
         meter = AllInOneMeter()
@@ -36,25 +32,13 @@ def validation_binary(model: nn.Module, criterion, valid_loader, device, num_cla
             valid_prob = F.sigmoid(outputs)
             valid_mask_ind_prob1 = F.sigmoid(outputs_mask_ind1)
             valid_mask_ind_prob2 = F.sigmoid(outputs_mask_ind1)
-            # loss = criterion(outputs, valid_mask)
+
             loss1 = criterion(outputs, valid_mask)
-            # loss1 = F.binary_cross_entropy_with_logits(outputs, valid_mask)
-            # loss2 = nn.BCEWithLogitsLoss()(outputs_mask_ind1, valid_mask_ind)
-            # weight = torch.ones_like(valid_mask_ind)
-            # weight[:, 0] = weight[:, 0] * 1
-            # weight[:, 1] = weight[:, 1] * 14
-            # weight[:, 2] = weight[:, 2] * 14
-            # weight[:, 3] = weight[:, 3] * 4
-            # weight[:, 4] = weight[:, 4] * 4
-            # weight = weight * valid_mask_ind + 1
-            # weight = weight.to(device).type(torch.cuda.FloatTensor)
+
             loss2 = F.binary_cross_entropy_with_logits(outputs_mask_ind1, valid_mask_ind)
             loss3 = F.binary_cross_entropy_with_logits(outputs_mask_ind2, valid_mask_ind)
             loss = loss1 * w1 + loss2 * w2 + loss3 * w3
 
-            # losses1.append(loss1.item())
-            # losses2.append(loss2.item())
-            # jaccard += [get_jaccard(valid_mask, (valid_prob > 0).float()).item()]
             meter.add(valid_prob, valid_mask, valid_mask_ind_prob1, valid_mask_ind_prob2, valid_mask_ind,
                       loss1.item(), loss2.item(), loss3.item(), loss.item())
 
@@ -62,10 +46,6 @@ def validation_binary(model: nn.Module, criterion, valid_loader, device, num_cla
         epoch_time = time.time() - start_time
         valid_metrics['epoch_time'] = epoch_time
 
-        ### be careful: image, mask, prob are variables
-        ### if you return them directly, the memory will blow up
-        # metrics = {'valid_loss1': valid_loss1, 'valid_loss2': valid_loss2, 'valid_jaccard': valid_jaccard,
-        #          'valid_image':valid_image.data, 'valid_mask':valid_mask.data, 'valid_prob':valid_prob.data}
         valid_metrics['image'] = valid_image.data
         valid_metrics['mask'] = valid_mask.data
         valid_metrics['prob'] = valid_prob.data

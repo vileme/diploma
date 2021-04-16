@@ -8,7 +8,8 @@ class AllInOneMeter(object):
     All in one meter: AUC
     """
 
-    def __init__(self):
+    def __init__(self, cuda_driver):
+        self.cuda_driver = cuda_driver
         self.out1auc1 = AUCMeter()
         self.out1auc2 = AUCMeter()
         self.out1auc3 = AUCMeter()
@@ -25,8 +26,8 @@ class AllInOneMeter(object):
         self.loss = []
         self.jaccard = []
         self.epsilon = 1e-15
-        self.intersection = torch.zeros([5], dtype=torch.float, device='cuda:0' if torch.cuda.is_available() else None)
-        self.union = torch.zeros([5], dtype=torch.float, device='cuda:0' if torch.cuda.is_available() else None)
+        self.intersection = torch.zeros([5], dtype=torch.float, device=f'cuda:{self.cuda_driver}' if torch.cuda.is_available() else None)
+        self.union = torch.zeros([5], dtype=torch.float, device=f'cuda:{self.cuda_driver}' if torch.cuda.is_available() else None)
         self.reset()
 
     def reset(self):
@@ -45,8 +46,8 @@ class AllInOneMeter(object):
         self.loss3 = []
         self.loss = []
         self.jaccard = []
-        self.intersection = torch.zeros([5], dtype=torch.float, device='cuda:0' if torch.cuda.is_available() else None)
-        self.union = torch.zeros([5], dtype=torch.float, device='cuda:0' if torch.cuda.is_available() else None)
+        self.intersection = torch.zeros([5], dtype=torch.float, device=f'cuda:{self.cuda_driver}' if torch.cuda.is_available() else None)
+        self.union = torch.zeros([5], dtype=torch.float, device=f'cuda:{self.cuda_driver}' if torch.cuda.is_available() else None)
 
     def add(self, mask_prob, true_mask, mask_ind_prob1, mask_ind_prob2, true_mask_ind, loss1, loss2, loss3, loss):
         self.out1auc1.add(mask_ind_prob1[:, 0].data, true_mask_ind[:, 0].data)

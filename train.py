@@ -42,6 +42,7 @@ def get_split(train_test_split_file='./data/train_test_id.pickle'):
 def main():
     parser = argparse.ArgumentParser()
     arg = parser.add_argument
+    arg('--cuda-driver', type=int, default=2)
     arg('--jaccard-weight', type=float, default=1)
     arg('--checkpoint', type=str, default='checkpoint/1_multi_task_unet', help='checkpoint path')
     arg('--train-test-split-file', type=str, default='./data/train_test_id.pickle', help='train test split file path')
@@ -78,7 +79,7 @@ def main():
 
     model = UNet16(num_classes=num_classes, pretrained='vgg')
     wandb.watch(model)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device(f'cuda:{args.cuda_driver}' if torch.cuda.is_available() else 'cpu')
     #    model = nn.DataParallel(model)
     model = nn.DataParallel(model)
     model.to(device)
@@ -170,7 +171,7 @@ def main():
 
     log = checkpoint.joinpath('train.log').open('at', encoding='utf8')
     writer = SummaryWriter(log_dir=checkpoint)
-    meter = AllInOneMeter()
+    meter = AllInOneMeter(args.cuda_driver)
     print('Start training')
     print_model_summay(model)
     previous_valid_jaccard = 0
@@ -186,7 +187,9 @@ def main():
             train_loss = 0
             valid_loss = 0
             for i, (train_image, train_mask, train_mask_ind) in enumerate(train_loader):
+                print(train_image.shape)
                 train_image = train_image.permute(0, 3, 1, 2)
+                print(train_image.shape)
                 train_mask = train_mask.permute(0, 3, 1, 2)
                 train_image = train_image.to(device)
                 train_mask = train_mask.to(device).type(
@@ -198,7 +201,6 @@ def main():
                 train_prob = torch.sigmoid(outputs)
                 train_mask_ind_prob1 = torch.sigmoid(outputs_mask_ind1)
                 train_mask_ind_prob2 = torch.sigmoid(outputs_mask_ind2)
-
                 loss1 = criterion(outputs, train_mask)
                 loss2 = F.binary_cross_entropy_with_logits(outputs_mask_ind1, train_mask_ind)
                 loss3 = F.binary_cross_entropy_with_logits(outputs_mask_ind2, train_mask_ind)
