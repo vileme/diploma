@@ -19,7 +19,7 @@ def validation_binary(model: nn.Module, criterion, valid_loader, device, device_
         w1 = 1.0
         w2 = 0.5
         w3 = 0.5
-        for valid_image, valid_mask, valid_mask_ind in valid_loader:
+        for valid_image, valid_mask, valid_mask_ind, _ in valid_loader:
             valid_image = valid_image.to(device)  # [N, 1, H, W]
             valid_mask = valid_mask.to(device).type(
                 torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)

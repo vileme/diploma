@@ -67,7 +67,6 @@ class UNet16(nn.Module):
             self.encoder = torchvision.models.vgg16(pretrained=True).features
         else:
             self.encoder = torchvision.models.vgg16(pretrained=False).features
-        print(self.encoder)
 
         self.relu = nn.ReLU(inplace=True)
 

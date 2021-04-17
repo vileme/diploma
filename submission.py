@@ -6,6 +6,7 @@ import numpy as np
 import pickle
 import glob
 import cv2
+import wandb
 from PIL import Image as pil_image
 
 import torch
@@ -17,6 +18,9 @@ import torch.nn.functional as F
 from torch.backends import cudnn
 import torchvision.transforms as transforms
 
+from dataset import make_loader, SkinDataset
+from loss import LossBinary
+from metrics import AllInOneMeter
 from models import UNet16
 
 
@@ -73,43 +77,54 @@ def load_image_from_file_and_save_to_h5(img_id, image_file, temp_path, resize=Tr
     return img_np
 
 
-def test_new_data(model_weight, image_path, temp_path, output_path, model):
-    image_ids = sorted([fname.split('/')[-1].split('.')[0] for fname in glob.glob(os.path.join(image_path, '*.jpg'))])
+def test_new_data(model_weight, image_path, train_test_id, output_path, train_test_split_file, cuda_driver):
+    data_set = SkinDataset(train_test_id=train_test_id,
+                           image_path=image_path,
+                           train="test",
+                           attribute= "all",
+                           train_test_split_file=train_test_split_file)
 
-    data_set = TestDataset(image_ids, image_path)
-    test_loader = DataLoader(data_set, batch_size=1, shuffle=False, num_workers=10, pin_memory=False)
+    test_loader = DataLoader(data_set, batch_size=1, shuffle=False, pin_memory=False)
+    model = UNet16(num_classes=5, pretrained='vgg')
 
-    if model == 'UNet16':
-        model = UNet16(num_classes=5, pretrained='vgg')
-                                                    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     model = nn.DataParallel(model)
     model.to(device)
     print('load model weight')
-    state = torch.load(model_weight)
+    state = torch.load(model_weight, map_location=device)
     model.load_state_dict(state['model'])
 
     cudnn.benchmark = True
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
     attr_types = ['pigment_network', 'negative_network', 'streaks', 'milia_like_cyst', 'globules']
+    intersection = torch.zeros([5], dtype=torch.float, device=f'cuda:{cuda_driver}' if torch.cuda.is_available() else None)
+    union = torch.zeros([5], dtype=torch.float, device=f'cuda:{cuda_driver}' if torch.cuda.is_available() else None)
     with torch.no_grad():
-        for img_id, test_image, W, H in test_loader:
-            img_id = img_id[0]
-            W = W[0].item()
-            H = H[0].item()
-            print('Loading', img_id, 'W', W, 'H', H, 'resized image', test_image.size())
-            test_image = test_image.to(device)  # [N, 1, H, W]
-            test_image = test_image.permute(0, 3, 1, 2)
-            outputs, outputs_mask_ind1, outputs_mask_ind2 = model(test_image)
-            test_prob = torch.sigmoid(outputs)
-            test_prob = test_prob.squeeze().data.cpu().numpy()
+        for i, (train_image, train_mask, train_mask_ind, img_id) in enumerate(test_loader):
+            train_image = train_image.permute(0, 3, 1, 2)
+            W = train_image.shape[2]
+            H = train_image.shape[3]
+            train_mask = train_mask.permute(0, 3, 1, 2)
+            train_image = train_image.to(device)
+            train_mask = train_mask.to(device).type(
+                torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
+            outputs, _, _ = model(train_image)
+            train_prob = torch.sigmoid(outputs)
+            y_pred = (train_prob > 0.3).type(train_mask.dtype)
+            y_true = train_mask
+            intersection += (y_pred * y_true).sum(dim=-2).sum(dim=-1).sum(dim=0)
+            union += y_true.sum(dim=-2).sum(dim=-1).sum(dim=0) + y_pred.sum(dim=-2).sum(dim=-1).sum(dim=0)
             for ind, attr in enumerate(attr_types):
-                resize_mask = cv2.resize(test_prob[ind, :, :], (W, H), interpolation=cv2.INTER_CUBIC)
+                resize_mask = cv2.resize(train_prob[ind, :, :], (W, H), interpolation=cv2.INTER_CUBIC)
                 for cutoff in [0.3]:
                     test_mask = (resize_mask > cutoff).astype('int') * 255.0
                     cv2.imwrite(os.path.join(output_path, "ISIC_%s_attribute_%s.png" % (img_id.split('_')[1], attr)),
                                 test_mask)
+    jaccard_array = (intersection / (union - intersection + 1e-15))
+    jaccard = jaccard_array.mean()
+    wandb.log({'jaccard': jaccard.item(), 'jaccard1': jaccard_array[0].item(), 'jaccard2': jaccard_array[1].item(),
+                   'jaccard3': jaccard_array[2].item(), 'jaccard4': jaccard_array[3].item(),
+                   'jaccard5': jaccard_array[4].item()})
 
 
 def main():
@@ -117,17 +132,18 @@ def main():
     arg = parser.add_argument
 
     arg('--model-weight', type=str, default=None)
-    arg('--image-path', type=str, default='data', help='image path')
-    arg('--temp-path', type=str, default='temp', help='temporary folder for preprocessed data')
+    arg('--image-path', type=str, default=None, help ='h5 img path')
+    arg('--train-test-split-file', type=str, default='./data/train_test_id.pickle', help='train test split file path')
     arg('--output-path', type=str, default='prediction', help='prediction')
+    arg('--cuda-driver', type=int, default=1)
 
     args = parser.parse_args()
-
-    model = UNet16
+    wandb.init("baseline_test", config=args)
     model_weight = args.model_weight
     if model_weight is None:
         raise ValueError('Please specify model-weight')
-
+    with open(args.train_test_split_file, 'rb') as f:
+        train_test_id = pickle.load(f)
     image_path = args.image_path
     nfiles = len(glob.glob(os.path.join(image_path, '*.jpg')))
     if nfiles == 0:
@@ -135,12 +151,11 @@ def main():
     else:
         print('%s images found' % nfiles)
 
-    temp_path = args.temp_path
     output_path = args.output_path
     if not os.path.exists(output_path):
         os.mkdir(output_path)
 
-    test_new_data(model_weight, image_path, temp_path, output_path, model)
+    test_new_data(model_weight, image_path, train_test_id, output_path, args.train_test_split_file, args.cuda_driver)
 
 
 if __name__ == '__main__':

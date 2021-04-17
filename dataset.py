@@ -13,9 +13,9 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator, array_to_im
 
 
 class SkinDataset(Dataset):
-    def __init__(self, train_test_id, image_path, train_test_split_file='./data/train_test_id.pickle', 
-                     train=True, attribute=None, transform=None, num_classes=None):
-        
+    def __init__(self, train_test_id, image_path, train_test_split_file='./data/train_test_id.pickle',
+                 train=True, attribute=None, transform=None, num_classes=None):
+
         self.train_test_id = train_test_id
         self.image_path = image_path
         self.train = train
@@ -30,17 +30,19 @@ class SkinDataset(Dataset):
 
         if self.attribute is not None and self.attribute != 'all':
             print('mask type: ', self.attribute, 'train_test_id.shape: ', self.train_test_id.shape)
-        if self.train:
+        if self.train == "train":
             self.train_test_id = self.train_test_id[self.train_test_id['Split'] == 'train'].ID.values
             print('Train =', self.train, 'train_test_id.shape: ', self.train_test_id.shape)
-        else:
-            self.train_test_id = self.train_test_id[self.train_test_id['Split'] != 'train'].ID.values
+        elif self.train == "valid":
+            self.train_test_id = self.train_test_id[self.train_test_id['Split'] == 'valid'].ID.values
+            print('Train =', self.train, 'train_test_id.shape: ', self.train_test_id.shape)
+        elif self.train == 'test':
+            self.train_test_id = self.train_test_id[self.train_test_id['Split'] == 'test'].ID.values
             print('Train =', self.train, 'train_test_id.shape: ', self.train_test_id.shape)
         self.n = self.train_test_id.shape[0]
 
     def __len__(self):
         return self.n
-
 
     def transform_fn(self, image, mask):
         if self.num_classes == 1:
@@ -55,31 +57,27 @@ class SkinDataset(Dataset):
                 image = TF.vflip(image)
                 mask = TF.vflip(mask)
 
-
             angle = random.randint(0, 90)
             translate = (random.uniform(0, 100), random.uniform(0, 100))
             scale = random.uniform(0.5, 2)
             shear = random.uniform(-10, 10)
-            image = TF.affine(image, angle,translate, scale, shear)
-            mask  = TF.affine(mask, angle, translate, scale, shear)
+            image = TF.affine(image, angle, translate, scale, shear)
+            mask = TF.affine(mask, angle, translate, scale, shear)
 
             image = TF.adjust_brightness(image, brightness_factor=random.uniform(0.8, 1.2))
 
             image = TF.adjust_saturation(image, saturation_factor=random.uniform(0.8, 1.2))
 
-
-
             angle = random.randint(0, 90)
             image = TF.rotate(image, angle)
-            mask  = TF.rotate(mask, angle)
-
+            mask = TF.rotate(mask, angle)
 
             image = img_to_array(image, data_format="channels_last")
-            mask  = img_to_array(mask, data_format="channels_last")
+            mask = img_to_array(mask, data_format="channels_last")
 
         else:
             image = array_to_img(image, data_format="channels_last")
-            mask_pil_array = [None]*mask.shape[-1]
+            mask_pil_array = [None] * mask.shape[-1]
             for i in range(mask.shape[-1]):
                 mask_pil_array[i] = array_to_img(mask[:, :, i, np.newaxis], data_format="channels_last")
 
@@ -92,7 +90,6 @@ class SkinDataset(Dataset):
                 image = TF.vflip(image)
                 for i in range(mask.shape[-1]):
                     mask_pil_array[i] = TF.vflip(mask_pil_array[i])
-
 
             angle = random.randint(0, 90)
             translate = (random.uniform(0, 100), random.uniform(0, 100))
@@ -111,7 +108,7 @@ class SkinDataset(Dataset):
                 mask[:, :, i] = img_to_array(mask_pil_array[i], data_format="channels_last")[:, :, 0].astype('uint8')
 
         image = (image / 255.0).astype('float32')
-        mask  = (mask / 255.0).astype('uint8')
+        mask = (mask / 255.0).astype('uint8')
         return image, mask
 
     def __getitem__(self, index):
@@ -121,13 +118,12 @@ class SkinDataset(Dataset):
         img_np = load_image(image_file)
         mask_np = load_mask(self.image_path, img_id, self.attribute)
 
-
-        if self.train:
+        if self.train == "train":
             img_np, mask_np = self.transform_fn(img_np, mask_np)
 
         img_np = img_np.astype('float32')
         ind = self.mask_ind.loc[index, self.attr_types].values.astype('uint8')
-        return img_np, mask_np, ind
+        return img_np, mask_np, ind, img_id
 
 
 def load_image(image_file):
@@ -151,7 +147,8 @@ def load_mask(image_path, img_id, attribute='pigment_network'):
     return mask_np
 
 
-def make_loader(train_test_id, image_path, args, train=True, shuffle=True, transform=None,train_test_split_file='./data/train_test_id.pickle', ):
+def make_loader(train_test_id, image_path, args, train, shuffle=True, transform=None,
+                train_test_split_file='./data/train_test_id.pickle', ):
     data_set = SkinDataset(train_test_id=train_test_id,
                            image_path=image_path,
                            train=train,
@@ -165,5 +162,3 @@ def make_loader(train_test_id, image_path, args, train=True, shuffle=True, trans
                              num_workers=args.workers,
                              pin_memory=torch.cuda.is_available())
     return data_loader
-
-

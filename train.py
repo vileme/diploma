@@ -7,18 +7,16 @@ import time
 import pickle
 import wandb
 import torch
-from torch import nn
 from torch.optim import Adam, SGD
 from torch.backends import cudnn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
 
 from models import UNet16
 from loss import LossBinary
 from dataset import make_loader
-from utils import save_weights, write_event, write_tensorboard, print_model_summay
+from utils import save_weights, write_event, print_model_summay, get_freeze_layer_names, set_freeze_layers
 from validation import validation_binary
 from transforms import DualCompose, ImageOnly, Normalize, HorizontalFlip, VerticalFlip
 from metrics import AllInOneMeter
@@ -33,7 +31,7 @@ def get_split(train_test_split_file='./data/train_test_id.pickle'):
                                                 'streaks',
                                                 'milia_like_cyst',
                                                 'globules']].sum(axis=1)
-        valid = train_test_id[train_test_id.Split != 'train'].copy()
+        valid = train_test_id[train_test_id.Split == 'test'].copy()
         valid['Split'] = 'train'
         train_test_id = pd.concat([train_test_id, valid], axis=0)
     return train_test_id
@@ -50,7 +48,7 @@ def main():
     arg('--batch-size', type=int, default=8)
     arg('--n-epochs', type=int, default=100)
     arg('--optimizer', type=str, default='Adam', help='Adam or SGD')
-    arg('--lr', type=float, default=0.001)
+    arg('--lr', type=float, default=0.01)
     arg('--workers', type=int, default=4)
     arg('--model-weight', type=str, default=None)
     arg('--resume-path', type=str, default=None)
@@ -81,7 +79,7 @@ def main():
     wandb.watch(model)
     device = torch.device(f'cuda:{args.cuda_driver}' if torch.cuda.is_available() else 'cpu')
     #    model = nn.DataParallel(model)
-    model = nn.DataParallel(model, device_ids=[args.cuda_driver, 2])
+    # model = nn.DataParallel(model, device_ids=[args.cuda_driver, 2])
     model.to(device)
     print(device)
     if args.model_weight is not None:
@@ -100,7 +98,7 @@ def main():
 
     print('--' * 10)
     print('num train = {}, num_val = {}'.format((train_test_id['Split'] == 'train').sum(),
-                                                (train_test_id['Split'] != 'train').sum()
+                                                (train_test_id['Split'] == 'test').sum()
                                                 ))
     print('--' * 10)
 
@@ -114,20 +112,17 @@ def main():
         ImageOnly(Normalize())
     ])
 
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
-
-    train_loader = make_loader(train_test_id, image_path, args, train=True, shuffle=True,
+    train_loader = make_loader(train_test_id, image_path, args, train="train", shuffle=True,
                                train_test_split_file=args.train_test_split_file,
                                transform=train_transform)
-    valid_loader = make_loader(train_test_id, image_path, args, train=False, shuffle=True,
+    valid_loader = make_loader(train_test_id, image_path, args, train="test", shuffle=True,
                                train_test_split_file=args.train_test_split_file,
                                transform=val_transform)
 
     if True:
         print('--' * 10)
         print('check data')
-        train_image, train_mask, train_mask_ind = next(iter(train_loader))
+        train_image, train_mask, train_mask_ind, name = next(iter(train_loader))
         print('train_image.shape', train_image.shape)
         print('train_mask.shape', train_mask.shape)
         print('train_mask_ind.shape', train_mask_ind.shape)
@@ -170,7 +165,6 @@ def main():
         step = 0
 
     log = checkpoint.joinpath('train.log').open('at', encoding='utf8')
-    writer = SummaryWriter(log_dir=checkpoint)
     meter = AllInOneMeter(args.cuda_driver)
     print('Start training')
     print_model_summay(model)
@@ -182,65 +176,62 @@ def main():
         meter.reset()
         w1 = 1.0
         w2 = 0.5
-        w3 = 0.5	
-        try:
-            train_loss = 0
-            valid_loss = 0
-            for i, (train_image, train_mask, train_mask_ind) in enumerate(train_loader):
-                train_image = train_image.permute(0, 3, 1, 2)
-                train_mask = train_mask.permute(0, 3, 1, 2)
-                train_image = train_image.to(device)
-                train_mask = train_mask.to(device).type(
-                    torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
-                train_mask_ind = train_mask_ind.to(device).type(
-                    torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
-                outputs, outputs_mask_ind1, outputs_mask_ind2 = model(train_image)      
-                train_prob = torch.sigmoid(outputs)
-                train_mask_ind_prob1 = torch.sigmoid(outputs_mask_ind1)
-                train_mask_ind_prob2 = torch.sigmoid(outputs_mask_ind2)
-                loss1 = criterion(outputs, train_mask)
-                loss2 = F.binary_cross_entropy_with_logits(outputs_mask_ind1, train_mask_ind)
-                loss3 = F.binary_cross_entropy_with_logits(outputs_mask_ind2, train_mask_ind)
-                # loss3 = criterion(outputs_mask_ind2, train_mask_ind)
-                loss = loss1 * w1 + loss2 * w2 + loss3 * w3
-                print(
-                    f'epoch={epoch:3d},iter={i:3d}, loss1={loss1.item():.4g}, loss2={loss2.item():.4g}, loss={loss.item():.4g}')
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                step += 1
-                meter.add(train_prob, train_mask, train_mask_ind_prob1, train_mask_ind_prob2, train_mask_ind,
-                          loss1.item(), loss2.item(), loss3.item(), loss.item())
-            epoch_time = time.time() - start_time
-            print("Epoch time", epoch_time)
-            train_metrics = meter.value()
-            train_metrics['epoch_time'] = epoch_time
-            train_metrics['image'] = train_image.data
-            train_metrics['mask'] = train_mask.data
-            train_metrics['prob'] = train_prob.data
+        w3 = 0.5
+        if epoch == 1:
+            freeze_layer_names = get_freeze_layer_names(model, part='encoder')
+            set_freeze_layers(model, freeze_layer_names=freeze_layer_names)
+        elif epoch == 50:
+            set_freeze_layers(model, freeze_layer_names=None)
+        for i, (train_image, train_mask, train_mask_ind, name) in enumerate(train_loader):
+            train_image = train_image.permute(0, 3, 1, 2)
+            train_mask = train_mask.permute(0, 3, 1, 2)
+            train_image = train_image.to(device)
+            train_mask = train_mask.to(device).type(
+                torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
+            train_mask_ind = train_mask_ind.to(device).type(
+                torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
+            outputs, outputs_mask_ind1, outputs_mask_ind2 = model(train_image)
+            train_prob = torch.sigmoid(outputs)
+            train_mask_ind_prob1 = torch.sigmoid(outputs_mask_ind1)
+            train_mask_ind_prob2 = torch.sigmoid(outputs_mask_ind2)
+            loss1 = criterion(outputs, train_mask)
+            loss2 = F.binary_cross_entropy_with_logits(outputs_mask_ind1, train_mask_ind)
+            loss3 = F.binary_cross_entropy_with_logits(outputs_mask_ind2, train_mask_ind)
+            loss = loss1 * w1 + loss2 * w2 + loss3 * w3
+            print(
+                f'epoch={epoch:3d},iter={i:3d}, loss1={loss1.item():.4g}, loss2={loss2.item():.4g}, loss={loss.item():.4g}')
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            step += 1
+            meter.add(train_prob, train_mask, train_mask_ind_prob1, train_mask_ind_prob2, train_mask_ind,
+                      loss1.item(), loss2.item(), loss3.item(), loss.item())
+        epoch_time = time.time() - start_time
+        print("Epoch time", epoch_time)
+        train_metrics = meter.value()
+        train_metrics['epoch_time'] = epoch_time
+        train_metrics['image'] = train_image.data
+        train_metrics['mask'] = train_mask.data
+        train_metrics['prob'] = train_prob.data
 
-            valid_metrics = valid_fn(model, criterion, valid_loader, device, args.cuda_driver, num_classes)
-            write_event(log, step, epoch=epoch, train_metrics=train_metrics, valid_metrics=valid_metrics)
-            write_tensorboard(writer, model, epoch, train_metrics=train_metrics, valid_metrics=valid_metrics)
-            valid_loss = valid_metrics['loss1']
-            valid_jaccard = valid_metrics['jaccard']
-            if valid_loss < previous_valid_loss:
-                save_weights(model, model_path, epoch + 1, step, train_metrics, valid_metrics)
-                previous_valid_loss = valid_loss
-                print('Save best model by loss')
-            if valid_jaccard > previous_valid_jaccard:
-                save_weights(model, model_path, epoch + 1, step, train_metrics, valid_metrics)
-                previous_valid_jaccard = valid_jaccard
-                print('Save best model by jaccard')
-            wandb.log({"loss": valid_metrics["loss"], "loss1": valid_metrics["loss1"],
-                       "jaccard_mean": valid_metrics["jaccard"], "jaccard1": valid_metrics["jaccard1"],
-                       "jaccard2": valid_metrics["jaccard2"], "jaccard3": valid_metrics["jaccard3"],
-                       "jaccard4": valid_metrics["jaccard4"], "jaccard5": valid_metrics["jaccard5"]})
-            scheduler.step(valid_metrics['loss1'])
-
-        except KeyboardInterrupt:
-            writer.close()
-    writer.close()
+        valid_metrics = valid_fn(model, criterion, valid_loader, device, args.cuda_driver, num_classes)
+        write_event(log, step, epoch=epoch, train_metrics=train_metrics, valid_metrics=valid_metrics)
+        valid_loss = valid_metrics['loss1']
+        valid_jaccard = valid_metrics['jaccard']
+        if valid_loss < previous_valid_loss:
+            save_weights(model, model_path, epoch + 1, step, train_metrics, valid_metrics)
+            previous_valid_loss = valid_loss
+            print('Save best model by loss')
+        if valid_jaccard > previous_valid_jaccard:
+            save_weights(model, model_path, epoch + 1, step, train_metrics, valid_metrics)
+            previous_valid_jaccard = valid_jaccard
+            print('Save best model by jaccard')
+        wandb.log({"loss/loss": valid_metrics["loss"], "loss/loss1": valid_metrics["loss1"],
+                   "loss/loss2":valid_metrics["loss2"],
+                   "jaccard_mean/jaccard_mean": valid_metrics["jaccard"], "jaccard_class/jaccard_pigment_network": valid_metrics["jaccard1"],
+                   "jaccard_class/jaccard_negative_network": valid_metrics["jaccard2"], "jaccard_class/jaccard_streaks": valid_metrics["jaccard3"],
+                   "jaccard_class/jaccard_milia_like_cyst": valid_metrics["jaccard4"], "jaccard_class/jaccard_globules": valid_metrics["jaccard5"]})
+        scheduler.step(valid_metrics['loss1'])
 
 
 if __name__ == '__main__':
