@@ -9,12 +9,12 @@ import time
 import torchvision.transforms as transforms
 
 
-def validation_binary(model: nn.Module, criterion, valid_loader, device, num_classes=None):
+def validation_binary(model: nn.Module, criterion, valid_loader, device, device_id, num_classes=None):
     with torch.no_grad():
 
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
-        meter = AllInOneMeter()
+        meter = AllInOneMeter(device_id)
         start_time = time.time()
         w1 = 1.0
         w2 = 0.5

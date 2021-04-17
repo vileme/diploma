@@ -42,7 +42,7 @@ def get_split(train_test_split_file='./data/train_test_id.pickle'):
 def main():
     parser = argparse.ArgumentParser()
     arg = parser.add_argument
-    arg('--cuda-driver', type=int, default=2)
+    arg('--cuda-driver', type=int, default=1)
     arg('--jaccard-weight', type=float, default=1)
     arg('--checkpoint', type=str, default='checkpoint/1_multi_task_unet', help='checkpoint path')
     arg('--train-test-split-file', type=str, default='./data/train_test_id.pickle', help='train test split file path')
@@ -81,9 +81,9 @@ def main():
     wandb.watch(model)
     device = torch.device(f'cuda:{args.cuda_driver}' if torch.cuda.is_available() else 'cpu')
     #    model = nn.DataParallel(model)
-    model = nn.DataParallel(model, device_ids=[2, 0, 1])
+    model = nn.DataParallel(model, device_ids=[args.cuda_driver, 2])
     model.to(device)
-
+    print(device)
     if args.model_weight is not None:
         state = torch.load(args.model_weight)
         model.load_state_dict(state['model'])
@@ -182,22 +182,19 @@ def main():
         meter.reset()
         w1 = 1.0
         w2 = 0.5
-        w3 = 0.5
+        w3 = 0.5	
         try:
             train_loss = 0
             valid_loss = 0
             for i, (train_image, train_mask, train_mask_ind) in enumerate(train_loader):
-                print(train_image.shape)
                 train_image = train_image.permute(0, 3, 1, 2)
-                print(train_image.shape)
                 train_mask = train_mask.permute(0, 3, 1, 2)
                 train_image = train_image.to(device)
                 train_mask = train_mask.to(device).type(
                     torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
                 train_mask_ind = train_mask_ind.to(device).type(
                     torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
-
-                outputs, outputs_mask_ind1, outputs_mask_ind2 = model(train_image)
+                outputs, outputs_mask_ind1, outputs_mask_ind2 = model(train_image)      
                 train_prob = torch.sigmoid(outputs)
                 train_mask_ind_prob1 = torch.sigmoid(outputs_mask_ind1)
                 train_mask_ind_prob2 = torch.sigmoid(outputs_mask_ind2)
@@ -215,14 +212,14 @@ def main():
                 meter.add(train_prob, train_mask, train_mask_ind_prob1, train_mask_ind_prob2, train_mask_ind,
                           loss1.item(), loss2.item(), loss3.item(), loss.item())
             epoch_time = time.time() - start_time
+            print("Epoch time", epoch_time)
             train_metrics = meter.value()
             train_metrics['epoch_time'] = epoch_time
             train_metrics['image'] = train_image.data
             train_metrics['mask'] = train_mask.data
             train_metrics['prob'] = train_prob.data
 
-            valid_metrics = valid_fn(model, criterion, valid_loader, device, num_classes)
-            print(valid_metrics)
+            valid_metrics = valid_fn(model, criterion, valid_loader, device, args.cuda_driver, num_classes)
             write_event(log, step, epoch=epoch, train_metrics=train_metrics, valid_metrics=valid_metrics)
             write_tensorboard(writer, model, epoch, train_metrics=train_metrics, valid_metrics=valid_metrics)
             valid_loss = valid_metrics['loss1']

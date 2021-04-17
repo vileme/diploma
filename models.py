@@ -122,7 +122,8 @@ class UNet16(nn.Module):
 
         center_conv = self.center_Conv2d(center)
         x_out_empty_ind1 = nn.AvgPool2d(kernel_size=center_conv.size()[2:])(center_conv)
-        x_out_empty_ind1 = torch.squeeze(x_out_empty_ind1)
+        x_out_empty_ind1 = torch.squeeze(x_out_empty_ind1, 2)
+        x_out_empty_ind1 = torch.squeeze(x_out_empty_ind1, 2)
 
         dec5 = self.dec5(torch.cat([center, conv5], 1))
 
@@ -133,7 +134,8 @@ class UNet16(nn.Module):
 
         x_out_mask = self.final(dec1)
         x_out_empty_ind2 = nn.MaxPool2d(kernel_size=x_out_mask.size()[2:])(x_out_mask)
-        x_out_empty_ind2 = torch.squeeze(x_out_empty_ind2)
+        x_out_empty_ind2 = torch.squeeze(x_out_empty_ind2, 2)
+        x_out_empty_ind2 = torch.squeeze(x_out_empty_ind2, 2)
 
         return x_out_mask, x_out_empty_ind1, x_out_empty_ind2
 

@@ -80,8 +80,8 @@ def test_new_data(model_weight, image_path, temp_path, output_path, model):
     test_loader = DataLoader(data_set, batch_size=1, shuffle=False, num_workers=10, pin_memory=False)
 
     if model == 'UNet16':
-        model = UNet16(num_classes=5, pretrained='resnet')
-
+        model = UNet16(num_classes=5, pretrained='vgg')
+                                                    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = nn.DataParallel(model)
     model.to(device)
